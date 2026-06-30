@@ -40,6 +40,149 @@ export default function VirtualDbDesigner({ initialDesign, onSave }: VirtualDbDe
     onSave(JSON.stringify(updatedTables));
   };
 
+  // ER Diagram layout and dragging states
+  const [tablePositions, setTablePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [draggingTable, setDraggingTable] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [hoveredConnection, setHoveredConnection] = useState<number | null>(null);
+
+  // Automatically arrange tables on initial load or change
+  useEffect(() => {
+    if (tables.length === 0) return;
+    setTablePositions(prev => {
+      const updated = { ...prev };
+      let changed = false;
+      tables.forEach((table, index) => {
+        if (!updated[table.name]) {
+          // Grid arrangement: 3 tables per row
+          const col = index % 3;
+          const row = Math.floor(index / 3);
+          updated[table.name] = {
+            x: col * 290 + 40,
+            y: row * 240 + 40,
+          };
+          changed = true;
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [tables]);
+
+  const resetLayout = () => {
+    const updated: Record<string, { x: number; y: number }> = {};
+    tables.forEach((table, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      updated[table.name] = {
+        x: col * 290 + 40,
+        y: row * 240 + 40,
+      };
+    });
+    setTablePositions(updated);
+  };
+
+  const handleMouseDown = (tableName: string, e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    const currentPos = tablePositions[tableName] || { x: 0, y: 0 };
+    setDraggingTable(tableName);
+    setDragOffset({
+      x: e.clientX - currentPos.x,
+      y: e.clientY - currentPos.y,
+    });
+  };
+
+  const handleContainerMouseMove = (e: React.MouseEvent) => {
+    if (!draggingTable) return;
+    const newX = Math.max(10, Math.min(1500, e.clientX - dragOffset.x));
+    const newY = Math.max(10, Math.min(1000, e.clientY - dragOffset.y));
+
+    setTablePositions(prev => ({
+      ...prev,
+      [draggingTable]: { x: newX, y: newY },
+    }));
+  };
+
+  const handleContainerMouseUp = () => {
+    setDraggingTable(null);
+  };
+
+  interface Connection {
+    fromTable: string;
+    fromColumn: string;
+    fromColIndex: number;
+    toTable: string;
+    toColumn: string;
+    toColIndex: number;
+  }
+
+  const getConnections = (): Connection[] => {
+    const list: Connection[] = [];
+    tables.forEach((table) => {
+      table.columns.forEach((col, colIdx) => {
+        if (col.isFk && col.fkRef) {
+          const parts = col.fkRef.split('.');
+          if (parts.length === 2) {
+            const targetTableName = parts[0];
+            const targetColName = parts[1];
+            
+            // Find target table and column index
+            const targetTableIdx = tables.findIndex(t => t.name === targetTableName);
+            if (targetTableIdx !== -1) {
+              const targetColIdx = tables[targetTableIdx].columns.findIndex(c => c.name === targetColName);
+              list.push({
+                fromTable: table.name,
+                fromColumn: col.name,
+                fromColIndex: colIdx,
+                toTable: targetTableName,
+                toColumn: targetColName,
+                toColIndex: targetColIdx !== -1 ? targetColIdx : 0
+              });
+            }
+          }
+        }
+      });
+    });
+    return list;
+  };
+
+  const getConnectorPoints = (
+    posA: { x: number; y: number },
+    idxA: number,
+    posB: { x: number; y: number },
+    idxB: number
+  ) => {
+    const tableWidth = 256;
+    const headerHeight = 36;
+    const rowHeight = 21; // Adjusted spacing for list rows
+    
+    // Middle of rows
+    const yA = posA.y + headerHeight + (idxA * rowHeight) + 12;
+    const yB = posB.y + headerHeight + (idxB * rowHeight) + 12;
+    
+    let xA = 0;
+    let xB = 0;
+    
+    // Connect closest edges horizontally
+    if (posA.x + tableWidth < posB.x) {
+      xA = posA.x + tableWidth;
+      xB = posB.x;
+    } else if (posB.x + tableWidth < posA.x) {
+      xA = posA.x;
+      xB = posB.x + tableWidth;
+    } else {
+      if (posA.x < posB.x) {
+        xA = posA.x + tableWidth;
+        xB = posB.x;
+      } else {
+        xA = posA.x;
+        xB = posB.x + tableWidth;
+      }
+    }
+    
+    return { xA, yA, xB, yB };
+  };
+
   const handleAddTable = () => {
     if (!newTableName.trim()) return;
     const cleanName = newTableName.trim().toLowerCase().replace(/\s+/g, '_');
@@ -414,57 +557,174 @@ export default function VirtualDbDesigner({ initialDesign, onSave }: VirtualDbDe
                 </div>
               )}
 
-              {/* Graphical DER Panel */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 min-h-[400px] flex flex-wrap gap-6 items-start justify-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f2937_1px,transparent_1px),linear-gradient(to_bottom,#1f2937_1px,transparent_1px)] bg-[size:24px_24px] opacity-25"></div>
-                
+              {/* Controls bar for the ER Diagram */}
+              {tables.length > 0 && (
+                <div className="flex items-center justify-between bg-slate-800/80 p-3 border border-slate-700/60 rounded-xl text-slate-200">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-indigo-400" />
+                    <span className="text-[10px] text-slate-300 font-medium">
+                      Arrastra los encabezados para organizar tu base de datos relacional. Se detectaron <strong className="text-indigo-400">{getConnections().length} relaciones</strong>.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetLayout}
+                    className="px-3 py-1 text-[10px] font-bold bg-slate-900 hover:bg-slate-750 border border-slate-700 text-slate-200 hover:text-white rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                  >
+                    Restaurar Distribución
+                  </button>
+                </div>
+              )}
+
+              {/* Graphical DER Panel (Interactive Canvas) */}
+              <div 
+                className="w-full h-[520px] overflow-auto border border-slate-800 bg-slate-950 rounded-xl relative select-none der-container scrollbar-thin scrollbar-thumb-slate-800"
+                onMouseMove={handleContainerMouseMove}
+                onMouseUp={handleContainerMouseUp}
+                onMouseLeave={handleContainerMouseUp}
+              >
                 {tables.length === 0 ? (
-                  <div className="text-center py-20 text-slate-500 max-w-sm m-auto relative z-10 space-y-2">
-                    <Database className="w-12 h-12 mx-auto text-slate-600 animate-bounce" />
+                  <div className="absolute inset-0 flex flex-col justify-center items-center text-center text-slate-500 p-8 space-y-2">
+                    <Database className="w-12 h-12 text-slate-600 animate-bounce" />
                     <h5 className="font-bold text-slate-300">Diagrama de Entidad Relación Vacío</h5>
-                    <p className="text-xs">Usa la barra lateral izquierda para crear tablas e ingresar sus columnas correspondientes.</p>
+                    <p className="text-xs max-w-sm">Usa la barra lateral izquierda para crear tablas e ingresar sus columnas correspondientes.</p>
                   </div>
                 ) : (
-                  tables.map((table, tIdx) => (
-                    <div
-                      key={tIdx}
-                      className={`w-64 bg-slate-950 border rounded-lg shadow-xl overflow-hidden relative z-10 cursor-pointer transition-all ${
-                        editingTableIndex === tIdx ? 'border-indigo-500 ring-1 ring-indigo-500 scale-[1.02]' : 'border-slate-800 hover:border-slate-700'
-                      }`}
-                      onClick={() => setEditingTableIndex(tIdx)}
-                    >
-                      {/* Table Header */}
-                      <div className="bg-slate-800 px-3 py-2 border-b border-slate-800 flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-indigo-400 flex items-center gap-1.5">
-                          <Database className="w-3.5 h-3.5" />
-                          {table.name}
-                        </span>
-                        <span className="text-[10px] text-slate-500 uppercase font-semibold">
-                          {table.columns.length} campos
-                        </span>
-                      </div>
+                  <div className="w-[1600px] h-[1000px] relative bg-slate-950/80">
+                    {/* Grid Blueprint Wallpaper */}
+                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1.5px,transparent_1.5px),linear-gradient(to_bottom,#1e293b_1.5px,transparent_1.5px)] bg-[size:28px_28px] opacity-25 pointer-events-none"></div>
+                    
+                    {/* SVG Connector layer */}
+                    <svg className="absolute inset-0 pointer-events-none w-full h-full z-0">
+                      <defs>
+                        {/* Crow's Foot / N-side (FK) relation marker */}
+                        <marker
+                          id="crow-many"
+                          markerWidth="12"
+                          markerHeight="12"
+                          refX="2"
+                          refY="6"
+                          orient="auto-start-reverse"
+                        >
+                          <path d="M 12 1 L 1 6 L 12 11" fill="none" stroke="#6366f1" strokeWidth="1.5" />
+                          <line x1="8" y1="1" x2="8" y2="11" stroke="#6366f1" strokeWidth="1" />
+                        </marker>
+                        
+                        {/* One-side (PK) relation marker */}
+                        <marker
+                          id="crow-one"
+                          markerWidth="12"
+                          markerHeight="12"
+                          refX="10"
+                          refY="6"
+                          orient="auto-start-reverse"
+                        >
+                          <line x1="4" y1="1" x2="4" y2="11" stroke="#fbbf24" strokeWidth="2" />
+                          <line x1="8" y1="1" x2="8" y2="11" stroke="#fbbf24" strokeWidth="2" />
+                        </marker>
+                      </defs>
 
-                      {/* Columns List */}
-                      <div className="p-2 space-y-1 bg-slate-950">
-                        {table.columns.length === 0 ? (
-                          <div className="text-center py-4 text-[11px] text-slate-600 italic">Sin columnas. Clic para añadir.</div>
-                        ) : (
-                          table.columns.map((col, cIdx) => (
-                            <div key={cIdx} className="flex items-center justify-between text-[11px] px-2 py-1 font-mono text-slate-300 border-b border-slate-900/40 last:border-0 hover:bg-slate-900 rounded">
-                              <span className="flex items-center gap-1 truncate font-medium">
-                                {col.isPk && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
-                                {col.isFk && <Link2 className="w-3 h-3 text-emerald-400 shrink-0" />}
-                                <span className={col.isPk ? 'text-amber-300 font-bold' : col.isFk ? 'text-emerald-300' : 'text-slate-300'}>
-                                  {col.name}
-                                </span>
-                              </span>
-                              <span className="text-slate-500 text-[10px]">{col.type}</span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  ))
+                      {getConnections().map((c, idx) => {
+                        const posA = tablePositions[c.fromTable] || { x: 40, y: 40 };
+                        const posB = tablePositions[c.toTable] || { x: 40, y: 40 };
+
+                        const { xA, yA, xB, yB } = getConnectorPoints(posA, c.fromColIndex, posB, c.toColIndex);
+
+                        const dx = Math.abs(xB - xA);
+                        const controlOffset = Math.max(60, dx * 0.45);
+
+                        const cp1X = xA === posA.x + 256 ? xA + controlOffset : xA - controlOffset;
+                        const cp2X = xB === posB.x + 256 ? xB + controlOffset : xB - controlOffset;
+
+                        const pathData = `M ${xA} ${yA} C ${cp1X} ${yA}, ${cp2X} ${yB}, ${xB} ${yB}`;
+                        const isHovered = hoveredConnection === idx;
+                        const anyHovered = hoveredConnection !== null;
+
+                        return (
+                          <g key={idx}>
+                            {/* Invisible fat line for easier hovering */}
+                            <path
+                              d={pathData}
+                              fill="none"
+                              stroke="transparent"
+                              strokeWidth="12"
+                              className="cursor-pointer pointer-events-auto"
+                              onMouseEnter={() => setHoveredConnection(idx)}
+                              onMouseLeave={() => setHoveredConnection(null)}
+                            />
+                            {/* Visual line */}
+                            <path
+                              d={pathData}
+                              fill="none"
+                              stroke={isHovered ? '#818cf8' : anyHovered ? '#1e293b' : '#6366f1'}
+                              strokeWidth={isHovered ? 2.5 : 1.5}
+                              markerStart="url(#crow-many)"
+                              markerEnd="url(#crow-one)"
+                              className="transition-all duration-150"
+                            />
+                          </g>
+                        );
+                      })}
+                    </svg>
+
+                    {/* Table boxes */}
+                    {tables.map((table, tIdx) => {
+                      const pos = tablePositions[table.name] || { x: 50 + tIdx * 280, y: 50 };
+                      const isEditing = editingTableIndex === tIdx;
+
+                      return (
+                        <div
+                          key={tIdx}
+                          style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+                          className={`w-64 bg-slate-950 border rounded-xl shadow-2xl overflow-hidden absolute z-10 transition-shadow duration-150 ${
+                            isEditing 
+                              ? 'border-indigo-500 ring-2 ring-indigo-500/40 shadow-indigo-500/10' 
+                              : 'border-slate-800 hover:border-slate-700 hover:shadow-slate-900/40'
+                          }`}
+                          onClick={() => setEditingTableIndex(tIdx)}
+                        >
+                          {/* Table Drag Handle Header */}
+                          <div 
+                            onMouseDown={(e) => handleMouseDown(table.name, e)}
+                            className="bg-slate-900/90 px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between cursor-grab active:cursor-grabbing select-none hover:bg-slate-800/80 transition-colors"
+                          >
+                            <span className="font-mono text-xs font-extrabold text-indigo-400 flex items-center gap-1.5 truncate" title={table.name}>
+                              <Database className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                              {table.name}
+                            </span>
+                            <span className="text-[9px] font-mono font-bold bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
+                              {table.columns.length} campos
+                            </span>
+                          </div>
+
+                          {/* Columns Rows */}
+                          <div className="p-1.5 space-y-0.5 bg-slate-950/40">
+                            {table.columns.length === 0 ? (
+                              <div className="text-center py-5 text-[10px] text-slate-600 italic">
+                                Sin campos. Haz clic para agregar.
+                              </div>
+                            ) : (
+                              table.columns.map((col, cIdx) => (
+                                <div 
+                                  key={cIdx} 
+                                  className="flex items-center justify-between text-[11px] h-[21px] px-2 font-mono text-slate-300 hover:bg-slate-900/50 rounded transition-colors"
+                                >
+                                  <span className="flex items-center gap-1 truncate font-medium">
+                                    {col.isPk && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
+                                    {col.isFk && <Link2 className="w-3 h-3 text-emerald-400 shrink-0" />}
+                                    <span className={col.isPk ? 'text-amber-300 font-bold' : col.isFk ? 'text-emerald-300 font-medium' : 'text-slate-300'}>
+                                      {col.name}
+                                    </span>
+                                  </span>
+                                  <span className="text-slate-500 text-[9px] uppercase tracking-tight shrink-0 font-bold">{col.type}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>

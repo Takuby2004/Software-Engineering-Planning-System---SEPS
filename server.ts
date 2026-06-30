@@ -5,7 +5,7 @@ import { db } from './src/db/index.ts';
 import { projects, scrumIterations, scrumTasks, testCases } from './src/db/schema.ts';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -501,6 +501,180 @@ Responde en español, de manera clara, concisa, profesional y estructurada. Ofre
   } catch (error: any) {
     console.error('Error with Gemini API:', error);
     res.status(500).json({ error: 'AI Suggestion failed. Make sure your API Key is configured in settings.', details: error.message });
+  }
+});
+
+// 10. AI DOCUMENT INTEGRATION ENDPOINT
+app.post('/api/projects/:id/ai-integrate-doc', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { documentText } = req.body;
+    
+    if (!documentText) return res.status(400).json({ error: 'El contenido del documento es requerido.' });
+
+    const pCheck = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.userId, req.dbUser!.id)));
+    if (pCheck.length === 0) return res.status(404).json({ error: 'Proyecto no encontrado o no autorizado.' });
+
+    const docSchema = {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING, description: "Nombre resumido o formal del software/sistema." },
+        description: { type: Type.STRING, description: "Descripción del sistema." },
+        organization: { type: Type.STRING, description: "Organización o entidad donde se aplicará." },
+        problemContext: { type: Type.STRING, description: "Contexto del problema de ingeniería." },
+        orgDescription: { type: Type.STRING, description: "Descripción detallada del entorno u organización." },
+        identifiedNeed: { type: Type.STRING, description: "Necesidad tecnológica o de proceso identificada." },
+        currentSituation: { type: Type.STRING, description: "Situación actual (cómo se realiza el proceso hoy, p. ej. manual o ineficiente)." },
+        mainProblem: { type: Type.STRING, description: "Formulación del problema principal." },
+        generalObjective: { type: Type.STRING, description: "Objetivo general del software usando verbos de taxonomía de Bloom (Diseñar, Desarrollar, Implementar, etc.)." },
+        specificObjectives: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: "Objetivos específicos para lograr el objetivo general (p. ej. Analizar requisitos, Diseñar base de datos, Implementar frontend, Realizar pruebas)."
+        },
+        functionalRequirements: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              code: { type: Type.STRING, description: "Código secuencial, ej: RF01, RF02..." },
+              desc: { type: Type.STRING, description: "Descripción detallada del requerimiento funcional." },
+              priority: { type: Type.STRING, description: "Prioridad del requerimiento: Alta, Media o Baja." }
+            },
+            required: ["code", "desc", "priority"]
+          },
+          description: "Listado de requerimientos funcionales del sistema extraídos del texto."
+        },
+        nonFunctionalRequirements: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              code: { type: Type.STRING, description: "Código secuencial, ej: RNF01, RNF02..." },
+              desc: { type: Type.STRING, description: "Descripción del requerimiento no funcional." },
+              category: { type: Type.STRING, description: "Categoría: Red, Seguridad, Rendimiento, Disponibilidad o Usabilidad." }
+            },
+            required: ["code", "desc", "category"]
+          },
+          description: "Listado de requerimientos no funcionales extraídos del texto."
+        },
+        scopeLimitations: { type: Type.STRING, description: "Alcance y limitaciones del sistema." },
+        architectureType: { type: Type.STRING, description: "Tipo de arquitectura de software, ej: Cliente-Servidor, Microservicios, Monolito..." },
+        architectureDescription: { type: Type.STRING, description: "Descripción detallada de la arquitectura de software." },
+        languagesUsed: { type: Type.STRING, description: "Lenguajes de programación recomendados o mencionados, ej: TypeScript, Python, SQL..." },
+        frameworksUsed: { type: Type.STRING, description: "Frameworks o librerías mencionadas, ej: React, Express, NestJS..." },
+        databasesUsed: { type: Type.STRING, description: "Bases de datos mencionadas o recomendadas, ej: PostgreSQL, MySQL, MongoDB..." },
+        conclusions: { type: Type.STRING, description: "Conclusiones del proyecto." },
+        recommendations: { type: Type.STRING, description: "Recomendaciones técnicas o del negocio." },
+        futureImprovements: { type: Type.STRING, description: "Mejoras futuras para fases posteriores." }
+      },
+      required: ["name", "description", "problemContext", "generalObjective", "specificObjectives", "functionalRequirements", "nonFunctionalRequirements"]
+    };
+
+    const systemPrompt = `Actúa como un Analista de Requisitos y Arquitecto de Software Senior.
+Analiza con precisión el siguiente documento de texto que contiene especificaciones o documentación ya redactada del proyecto.
+Extrae y estructura la información correspondiente a cada uno de los campos del esquema del proyecto en español.
+Si alguna sección o campo no se menciona en absoluto en el documento, infiérela de manera profesional basándote en el contexto del proyecto y el resto del documento.
+No dejes campos vacíos, genera textos coherentes de Ingeniería de Software.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [
+        { text: systemPrompt },
+        { text: `Documento a analizar:\n"""\n${documentText}\n"""` }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: docSchema,
+        temperature: 0.2
+      }
+    });
+
+    const resultText = response.text || '{}';
+    res.json(JSON.parse(resultText));
+  } catch (error: any) {
+    console.error('Error integrating document:', error);
+    res.status(500).json({ error: 'Error al procesar el documento con IA.', details: error.message });
+  }
+});
+
+// 11. AI GITHUB REPOSITORY INTEGRATION ENDPOINT
+app.post('/api/projects/:id/ai-integrate-github', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { repoName, repoDesc, repoLanguage, filesList } = req.body;
+
+    if (!repoName) return res.status(400).json({ error: 'El nombre del repositorio es requerido.' });
+
+    const pCheck = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.userId, req.dbUser!.id)));
+    if (pCheck.length === 0) return res.status(404).json({ error: 'Proyecto no encontrado o no autorizado.' });
+
+    const githubSchema = {
+      type: Type.OBJECT,
+      properties: {
+        description: { type: Type.STRING, description: "Descripción técnica u operativa resumida para el proyecto basada en el repositorio." },
+        languagesUsed: { type: Type.STRING, description: "Lenguajes de programación detectados, ej: TypeScript, JavaScript, HTML, CSS..." },
+        frameworksUsed: { type: Type.STRING, description: "Frameworks y librerías clave detectados (ej: React, Express, Tailwind, Vite...)." },
+        databasesUsed: { type: Type.STRING, description: "Bases de datos detectadas u optimizadas para este stack (ej: PostgreSQL, SQLite...)." },
+        architectureType: { type: Type.STRING, description: "Tipo de arquitectura deducido (ej: Cliente-Servidor, MVC, Monolito modular...)." },
+        architectureDescription: { type: Type.STRING, description: "Descripción técnica detallada de cómo está estructurado el código y los directorios de este repositorio." },
+        virtualDatabaseDesign: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING, description: "Nombre de la tabla de la base de datos." },
+              columns: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING, description: "Nombre de la columna." },
+                    type: { type: Type.STRING, description: "Tipo de dato de la columna, ej: serial, integer, varchar(100), boolean..." },
+                    isPk: { type: Type.BOOLEAN, description: "True si es llave primaria (Primary Key)." },
+                    isFk: { type: Type.BOOLEAN, description: "True si es llave foránea (Foreign Key)." },
+                    fkRef: { type: Type.STRING, description: "Opcional. Tabla y columna de referencia si es llave foránea, ej: usuarios.id." }
+                  },
+                  required: ["name", "type", "isPk", "isFk"]
+                }
+              }
+            },
+            required: ["name", "columns"]
+          },
+          description: "Diseño lógico sugerido o derivado para la base de datos relacional PostgreSQL con tablas y columnas basadas en la estructura de archivos y directorios del repositorio de código."
+        }
+      },
+      required: ["description", "languagesUsed", "frameworksUsed", "databasesUsed", "architectureType", "architectureDescription", "virtualDatabaseDesign"]
+    };
+
+    const systemPrompt = `Actúa como un Arquitecto de Software y Analista de Sistemas Senior.
+Analiza la información proporcionada de un repositorio de GitHub para deducir y estructurar los detalles técnicos del proyecto en español.
+En base al nombre, descripción, lenguaje principal y la lista de archivos/carpetas en la raíz del repositorio, describe la arquitectura técnica, los lenguajes, frameworks, bases de datos ideales para este stack, y genera un diseño lógico para la base de datos relacional PostgreSQL sugerida o derivada para este sistema.`;
+
+    const repoContext = `Repositorio: ${repoName}
+Descripción: ${repoDesc || 'Sin descripción'}
+Lenguaje principal: ${repoLanguage || 'No especificado'}
+Estructura de archivos y directorios:
+${filesList ? filesList.join('\n') : 'No especificada'}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [
+        { text: systemPrompt },
+        { text: repoContext }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: githubSchema,
+        temperature: 0.2
+      }
+    });
+
+    const resultText = response.text || '{}';
+    res.json(JSON.parse(resultText));
+  } catch (error: any) {
+    console.error('Error integrating GitHub repo:', error);
+    res.status(500).json({ error: 'Error al analizar el repositorio de GitHub con IA.', details: error.message });
   }
 });
 

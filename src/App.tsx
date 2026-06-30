@@ -42,6 +42,7 @@ import ReportExporter from './components/ReportExporter.tsx';
 import MarkdownPreview from './components/MarkdownPreview.tsx';
 import GithubLinker from './components/GithubLinker.tsx';
 import GithubCodeExplorer from './components/GithubCodeExplorer.tsx';
+import { DocReviewModal } from './components/DocReviewModal.tsx';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -77,6 +78,14 @@ export default function App() {
   const [newRnfCode, setNewRnfCode] = useState('');
   const [newRnfDesc, setNewRnfDesc] = useState('');
   const [newRnfCategory, setNewRnfCategory] = useState<'Red' | 'Seguridad' | 'Rendimiento' | 'Disponibilidad' | 'Usabilidad'>('Rendimiento');
+
+  // Document Integration States
+  const [docText, setDocText] = useState('');
+  const [docFileName, setDocFileName] = useState('');
+  const [integratingDoc, setIntegratingDoc] = useState(false);
+  const [docIntegrationError, setDocIntegrationError] = useState<string | null>(null);
+  const [parsedDocData, setParsedDocData] = useState<any | null>(null);
+  const [showDocReviewModal, setShowDocReviewModal] = useState(false);
 
   // Track Auth state changes
   useEffect(() => {
@@ -407,6 +416,88 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
     }
   };
 
+  // Document Integration Handlers
+  const handleIntegrateDocument = async () => {
+    if (!activeProject || !docText.trim()) return;
+    setIntegratingDoc(true);
+    setDocIntegrationError(null);
+    setParsedDocData(null);
+
+    try {
+      const res = await fetchWithAuth(`/api/projects/${activeProject.id}/ai-integrate-doc`, {
+        method: 'POST',
+        body: JSON.stringify({ documentText: docText.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al procesar el documento.');
+      }
+      setParsedDocData(data);
+      setShowDocReviewModal(true);
+    } catch (err: any) {
+      console.error(err);
+      setDocIntegrationError(err.message || 'Error de conexión con la IA.');
+    } finally {
+      setIntegratingDoc(false);
+    }
+  };
+
+  const handleApplyParsedDoc = async (selectedFields: Record<string, boolean>) => {
+    if (!activeProject || !parsedDocData) return;
+    const fieldsToUpdate: Partial<Project> = {};
+
+    const docFieldsMapping: Record<string, string> = {
+      name: 'name',
+      description: 'description',
+      organization: 'organization',
+      problemContext: 'problemContext',
+      orgDescription: 'orgDescription',
+      identifiedNeed: 'identifiedNeed',
+      currentSituation: 'currentSituation',
+      mainProblem: 'mainProblem',
+      generalObjective: 'generalObjective',
+      specificObjectives: 'specificObjectives',
+      functionalRequirements: 'functionalRequirements',
+      nonFunctionalRequirements: 'nonFunctionalRequirements',
+      scopeLimitations: 'scopeLimitations',
+      architectureType: 'architectureType',
+      architectureDescription: 'architectureDescription',
+      languagesUsed: 'languagesUsed',
+      frameworksUsed: 'frameworksUsed',
+      databasesUsed: 'databasesUsed',
+      conclusions: 'conclusions',
+      recommendations: 'recommendations',
+      futureImprovements: 'futureImprovements'
+    };
+
+    for (const key of Object.keys(docFieldsMapping)) {
+      if (selectedFields[key] && parsedDocData[key] !== undefined) {
+        const val = parsedDocData[key];
+        if (typeof val === 'object') {
+          (fieldsToUpdate as any)[docFieldsMapping[key]] = JSON.stringify(val);
+        } else {
+          (fieldsToUpdate as any)[docFieldsMapping[key]] = val;
+        }
+      }
+    }
+
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      alert('Debes seleccionar al menos un campo para integrar.');
+      return;
+    }
+
+    try {
+      await handleUpdateProjectDetails(fieldsToUpdate);
+      alert('¡Documentación integrada exitosamente al proyecto!');
+      setShowDocReviewModal(false);
+      setDocText('');
+      setDocFileName('');
+      setParsedDocData(null);
+    } catch (err: any) {
+      alert('Error al aplicar los datos integrados: ' + err.message);
+    }
+  };
+
   // --------------------------------------------------------------------------------
   // REQUIREMENT HELPERS
   // --------------------------------------------------------------------------------
@@ -689,6 +780,15 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
             </div>
           )}
 
+          {/* AI DOCUMENT INTEGRATION REVIEW DIALOG */}
+          {showDocReviewModal && parsedDocData && (
+            <DocReviewModal
+              data={parsedDocData}
+              onClose={() => setShowDocReviewModal(false)}
+              onApply={handleApplyParsedDoc}
+            />
+          )}
+
           {/* CREATE PROJECT DIALOG */}
           {showCreateProject && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
@@ -864,6 +964,108 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
                     <p className="text-[11px] text-indigo-800 leading-relaxed">
                       Navega por cada capítulo de la barra lateral izquierda para completar los requisitos solicitados en la rúbrica del proyecto. Al finalizar, ve al último capítulo para exportar tu informe formateado bajo normativa estándar APA 7.
                     </p>
+                  </div>
+                </div>
+
+                {/* AI DOCUMENT INTEGRATOR */}
+                <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 border-b pb-3">
+                    <Sparkles className="w-5 h-5 text-indigo-600 fill-indigo-100 shrink-0" />
+                    <div>
+                      <h3 className="font-extrabold text-slate-800 text-xs">Integrador Inteligente de Documentación (IA)</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Sube un archivo de tu documentación técnica ya escrita o pega el texto directamente. Nuestra IA Gemini estructurará e integrará automáticamente el contenido en todo el proyecto.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* File Upload Zone */}
+                    <div 
+                      className="border border-dashed border-slate-250 hover:border-indigo-400 rounded-lg p-5 text-center bg-slate-50/50 hover:bg-indigo-50/10 transition-all flex flex-col justify-center items-center cursor-pointer relative"
+                      onClick={() => document.getElementById('doc-file-input')?.click()}
+                    >
+                      <input 
+                        id="doc-file-input"
+                        type="file"
+                        accept=".txt,.md,.json,.html"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setDocFileName(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                              if (evt.target?.result) {
+                                setDocText(evt.target.result as string);
+                              }
+                            };
+                            reader.readAsText(file);
+                          }
+                        }}
+                      />
+                      <FileText className="w-8 h-8 text-slate-400 mb-2" />
+                      <p className="text-xs font-bold text-slate-700">
+                        {docFileName ? `Archivo: ${docFileName}` : 'Arrastra o selecciona tu archivo'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">Soporta .txt, .md, .json</p>
+                    </div>
+
+                    {/* Paste text area */}
+                    <div className="space-y-1 text-left flex flex-col justify-between">
+                      <div className="flex-1 flex flex-col">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">
+                          O Pega el Texto de tu Documentación
+                        </label>
+                        <textarea
+                          placeholder="Pega aquí el contenido, actas de requerimientos, objetivos, etc..."
+                          className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none flex-1 min-h-[100px] resize-none"
+                          value={docText}
+                          onChange={(e) => setDocText(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {docIntegrationError && (
+                    <div className="flex items-start gap-1.5 text-[10px] text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-150 text-left">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{docIntegrationError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    {docText.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDocText('');
+                          setDocFileName('');
+                          setDocIntegrationError(null);
+                        }}
+                        className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 font-semibold"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleIntegrateDocument}
+                      disabled={integratingDoc || !docText.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-xs px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                    >
+                      {integratingDoc ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Procesando con IA...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 fill-indigo-200" />
+                          Analizar e Integrar Documentación
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>

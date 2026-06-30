@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Github, ExternalLink, Star, Plus, Trash2, Link2, Search, RefreshCw, AlertCircle, Check, GitBranch } from 'lucide-react';
+import { Github, ExternalLink, Star, Plus, Trash2, Link2, Search, RefreshCw, AlertCircle, Check, GitBranch, Sparkles, Database, X } from 'lucide-react';
 import { Project, GithubRepo } from '../types.ts';
+import { fetchWithAuth } from '../lib/api.ts';
 
 interface GithubLinkerProps {
   project: Project;
@@ -18,6 +19,103 @@ export default function GithubLinker({ project, onUpdateProject }: GithubLinkerP
   const [manualUrl, setManualUrl] = useState('');
   const [manualLoading, setManualLoading] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
+
+  // GitHub AI Integration States
+  const [analyzingRepoId, setAnalyzingRepoId] = useState<number | null>(null);
+  const [githubParseResult, setGithubParseResult] = useState<any | null>(null);
+  const [showGithubReviewModal, setShowGithubReviewModal] = useState(false);
+  const [selectedGithubFields, setSelectedGithubFields] = useState<Record<string, boolean>>({
+    description: true,
+    languagesUsed: true,
+    frameworksUsed: true,
+    databasesUsed: true,
+    architectureType: true,
+    architectureDescription: true,
+    virtualDatabaseDesign: true
+  });
+
+  const handleIntegrateGithubRepo = async (repo: GithubRepo) => {
+    setAnalyzingRepoId(repo.id);
+    setGithubParseResult(null);
+
+    try {
+      // 1. Fetch root directories and files to give context to Gemini
+      let filesList: string[] = [];
+      try {
+        const headers: HeadersInit = { 'Accept': 'application/vnd.github.v3+json' };
+        if (personalToken.trim()) headers['Authorization'] = `token ${personalToken.trim()}`;
+        const response = await fetch(`https://api.github.com/repos/${repo.fullName}/contents`, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            filesList = data.map((item: any) => `${item.type === 'dir' ? '[DIR]' : '[FILE]'} ${item.path}`);
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch repo files, relying on repo metadata only:', e);
+      }
+
+      // 2. Call our backend Express endpoint
+      const res = await fetchWithAuth(`/api/projects/${project.id}/ai-integrate-github`, {
+        method: 'POST',
+        body: JSON.stringify({
+          repoName: repo.fullName,
+          repoDesc: repo.description,
+          repoLanguage: repo.language,
+          filesList
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al analizar el repositorio.');
+      }
+
+      setGithubParseResult(data);
+      setShowGithubReviewModal(true);
+    } catch (err: any) {
+      alert('Error al analizar el repositorio con IA: ' + err.message);
+    } finally {
+      setAnalyzingRepoId(null);
+    }
+  };
+
+  const handleApplyGithubIntegration = () => {
+    if (!githubParseResult) return;
+    const fieldsToUpdate: Partial<Project> = {};
+
+    if (selectedGithubFields.description && githubParseResult.description) {
+      fieldsToUpdate.description = githubParseResult.description;
+    }
+    if (selectedGithubFields.languagesUsed && githubParseResult.languagesUsed) {
+      fieldsToUpdate.languagesUsed = githubParseResult.languagesUsed;
+    }
+    if (selectedGithubFields.frameworksUsed && githubParseResult.frameworksUsed) {
+      fieldsToUpdate.frameworksUsed = githubParseResult.frameworksUsed;
+    }
+    if (selectedGithubFields.databasesUsed && githubParseResult.databasesUsed) {
+      fieldsToUpdate.databasesUsed = githubParseResult.databasesUsed;
+    }
+    if (selectedGithubFields.architectureType && githubParseResult.architectureType) {
+      fieldsToUpdate.architectureType = githubParseResult.architectureType;
+    }
+    if (selectedGithubFields.architectureDescription && githubParseResult.architectureDescription) {
+      fieldsToUpdate.architectureDescription = githubParseResult.architectureDescription;
+    }
+    if (selectedGithubFields.virtualDatabaseDesign && githubParseResult.virtualDatabaseDesign) {
+      fieldsToUpdate.virtualDatabaseDesign = JSON.stringify(githubParseResult.virtualDatabaseDesign);
+    }
+
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      alert('Selecciona al menos un campo para integrar.');
+      return;
+    }
+
+    onUpdateProject(fieldsToUpdate);
+    alert('¡Repositorio de GitHub integrado y estructurado en tu documento de ingeniería con éxito!');
+    setShowGithubReviewModal(false);
+    setGithubParseResult(null);
+  };
 
   // Parse existing repos
   const linkedRepos: GithubRepo[] = React.useMemo(() => {
@@ -253,13 +351,34 @@ export default function GithubLinker({ project, onUpdateProject }: GithubLinkerP
                     </div>
                   </div>
                   
-                  <button
-                    onClick={() => handleRemoveRepo(repo.id)}
-                    className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                    title="Desenlazar repositorio"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex flex-col justify-between items-end gap-2 h-full min-h-[50px] shrink-0">
+                    <button
+                      onClick={() => handleRemoveRepo(repo.id)}
+                      className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                      title="Desenlazar repositorio"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => handleIntegrateGithubRepo(repo)}
+                      disabled={analyzingRepoId !== null}
+                      className="px-2 py-1 text-[9px] font-extrabold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:bg-slate-100 disabled:text-slate-400 rounded transition-all flex items-center gap-1 shadow-2xs"
+                      title="Analizar e integrar estructura de este repo al proyecto con IA"
+                    >
+                      {analyzingRepoId === repo.id ? (
+                        <>
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                          Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-2.5 h-2.5 fill-indigo-200" />
+                          Integrar al Informe (IA)
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -380,6 +499,202 @@ export default function GithubLinker({ project, onUpdateProject }: GithubLinkerP
             )}
           </div>
         </div>
+
+      {/* GITHUB INTEGRATION REVIEW DIALOG */}
+      {showGithubReviewModal && githubParseResult && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm text-xs">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="p-4 border-b border-slate-150 flex justify-between items-center bg-slate-50 rounded-t-xl">
+              <div className="flex items-center gap-2 text-left">
+                <Sparkles className="w-5 h-5 text-indigo-600 fill-indigo-100 shrink-0" />
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm">Vista Previa de la Integración (GitHub + IA)</h3>
+                  <p className="text-[10px] text-slate-500">Revisa la estructura técnica y de bases de datos que se agregará a tu informe.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowGithubReviewModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Selector list */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-left">
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800 text-[10px] leading-relaxed flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Nota técnica:</strong> Integrar esta información actualizará los campos de lenguaje, frameworks, base de datos y arquitectura técnica en el informe. También sugerirá tablas PostgreSQL correspondientes en tu diseñador de base de datos virtual.
+                </span>
+              </div>
+
+              {/* Checkboxes field by field */}
+              <div className="space-y-3">
+                {/* 1. Description */}
+                {githubParseResult.description && (
+                  <div className="border border-slate-150 rounded-lg p-3 bg-white">
+                    <label className="flex items-start gap-2 font-bold text-slate-800 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedGithubFields.description} 
+                        onChange={() => setSelectedGithubFields(prev => ({ ...prev, description: !prev.description }))}
+                        className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Descripción Técnica / Resumen</span>
+                    </label>
+                    {selectedGithubFields.description && (
+                      <p className="mt-1.5 text-[11px] text-slate-600 pl-6 leading-relaxed bg-slate-50 p-2 rounded border border-slate-100">
+                        {githubParseResult.description}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Languages / Frameworks / Databases */}
+                <div className="border border-slate-150 rounded-lg p-3 bg-white space-y-2">
+                  <span className="font-bold text-slate-800 block">Stack Tecnológico y Herramientas</span>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pl-1">
+                    {/* Languages */}
+                    <div>
+                      <label className="flex items-center gap-1.5 font-semibold text-slate-700 text-[11px] cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedGithubFields.languagesUsed} 
+                          onChange={() => setSelectedGithubFields(prev => ({ ...prev, languagesUsed: !prev.languagesUsed }))}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>Lenguajes</span>
+                      </label>
+                      {selectedGithubFields.languagesUsed && (
+                        <p className="mt-1 text-[10px] text-slate-500 pl-5">{githubParseResult.languagesUsed || 'No detectados'}</p>
+                      )}
+                    </div>
+
+                    {/* Frameworks */}
+                    <div>
+                      <label className="flex items-center gap-1.5 font-semibold text-slate-700 text-[11px] cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedGithubFields.frameworksUsed} 
+                          onChange={() => setSelectedGithubFields(prev => ({ ...prev, frameworksUsed: !prev.frameworksUsed }))}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>Frameworks</span>
+                      </label>
+                      {selectedGithubFields.frameworksUsed && (
+                        <p className="mt-1 text-[10px] text-slate-500 pl-5">{githubParseResult.frameworksUsed || 'No detectados'}</p>
+                      )}
+                    </div>
+
+                    {/* Databases */}
+                    <div>
+                      <label className="flex items-center gap-1.5 font-semibold text-slate-700 text-[11px] cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedGithubFields.databasesUsed} 
+                          onChange={() => setSelectedGithubFields(prev => ({ ...prev, databasesUsed: !prev.databasesUsed }))}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>Bases de Datos</span>
+                      </label>
+                      {selectedGithubFields.databasesUsed && (
+                        <p className="mt-1 text-[10px] text-slate-500 pl-5">{githubParseResult.databasesUsed || 'No detectados'}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Architecture Type / Description */}
+                {(githubParseResult.architectureType || githubParseResult.architectureDescription) && (
+                  <div className="border border-slate-150 rounded-lg p-3 bg-white space-y-2">
+                    <span className="font-bold text-slate-800 block">Arquitectura del Software</span>
+                    <div className="space-y-1.5 pl-1">
+                      <label className="flex items-center gap-1.5 font-semibold text-slate-700 text-[11px] cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedGithubFields.architectureType && selectedGithubFields.architectureDescription} 
+                          onChange={() => setSelectedGithubFields(prev => ({ 
+                            ...prev, 
+                            architectureType: !prev.architectureType,
+                            architectureDescription: !prev.architectureDescription 
+                          }))}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>Tipo y Descripción de la Arquitectura</span>
+                      </label>
+                      {selectedGithubFields.architectureType && (
+                        <div className="mt-1 text-[11px] text-slate-600 pl-5 space-y-1 bg-slate-50 p-2 rounded border border-slate-100">
+                          <p className="font-bold">Patrón: {githubParseResult.architectureType}</p>
+                          <p className="text-[10px] whitespace-pre-wrap">{githubParseResult.architectureDescription}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Database Schema (virtualDatabaseDesign) */}
+                {githubParseResult.virtualDatabaseDesign && githubParseResult.virtualDatabaseDesign.length > 0 && (
+                  <div className="border border-slate-150 rounded-lg p-3 bg-white space-y-2">
+                    <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedGithubFields.virtualDatabaseDesign} 
+                        onChange={() => setSelectedGithubFields(prev => ({ ...prev, virtualDatabaseDesign: !prev.virtualDatabaseDesign }))}
+                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Diseño de Base de Datos Relacional Sugerido ({githubParseResult.virtualDatabaseDesign.length} Tablas)</span>
+                    </label>
+
+                    {selectedGithubFields.virtualDatabaseDesign && (
+                      <div className="pl-6 space-y-2 max-h-56 overflow-y-auto">
+                        {githubParseResult.virtualDatabaseDesign.map((table: any, idx: number) => (
+                          <div key={idx} className="bg-slate-50/50 border border-slate-150 rounded-md p-2">
+                            <div className="flex items-center gap-1.5 font-mono font-bold text-slate-800 text-[10px]">
+                              <Database className="w-3.5 h-3.5 text-indigo-500" />
+                              {table.name}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mt-1 text-[9px] font-mono pl-5">
+                              {table.columns?.map((col: any, colIdx: number) => (
+                                <div key={colIdx} className="text-slate-600 flex justify-between bg-white border border-slate-100 p-1 rounded">
+                                  <span>{col.name} <span className="text-slate-400">({col.type})</span></span>
+                                  <div className="flex gap-1">
+                                    {col.isPk && <span className="bg-indigo-100 text-indigo-800 text-[8px] font-bold px-1 rounded">PK</span>}
+                                    {col.isFk && <span className="bg-amber-100 text-amber-800 text-[8px] font-bold px-1 rounded" title={col.fkRef}>FK</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-150 flex justify-end gap-2 bg-slate-50 rounded-b-xl">
+              <button
+                onClick={() => setShowGithubReviewModal(false)}
+                className="px-3.5 py-1.5 font-bold text-slate-600 hover:bg-slate-150 rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleApplyGithubIntegration}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-5 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm"
+              >
+                <Check className="w-4 h-4" />
+                Integrar Datos del Repositorio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* Opción B: Enlace Manual Directo */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 text-left">
