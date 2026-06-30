@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Custom compact style overrides for scrollbars and inputs */
+@layer utilities {
+  .high-density-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .high-density-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .high-density-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 2px;
+  }
+  .high-density-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+/* Ensure inputs, select lists, and textareas have smaller paddings globally */
+input, select, textarea {
+  font-size: 11px !important;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+}
+
+label {
+  font-size: 10px !important;
+  letter-spacing: 0.05em !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Outfit", "Inter", sans-serif;
+  letter-spacing: -0.015em;
+}
+
+/* Report printable optimizations */
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+    font-size: 11px !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+}
