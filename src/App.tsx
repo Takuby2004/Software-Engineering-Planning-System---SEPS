@@ -43,6 +43,7 @@ import MarkdownPreview from './components/MarkdownPreview.tsx';
 import GithubLinker from './components/GithubLinker.tsx';
 import GithubCodeExplorer from './components/GithubCodeExplorer.tsx';
 import { DocReviewModal } from './components/DocReviewModal.tsx';
+import ProjectChangeHistory from './components/ProjectChangeHistory.tsx';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -56,6 +57,7 @@ export default function App() {
   const [tasks, setTasks] = useState<ScrumTask[]>([]);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loadingProjectDetails, setLoadingProjectDetails] = useState(false);
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
 
   // Active workspace tab
   const [activeTab, setActiveTab] = useState<'info' | 'cap1' | 'cap2' | 'cap3' | 'cap4' | 'cap5' | 'cap6' | 'codigo'>('info');
@@ -198,6 +200,7 @@ export default function App() {
         setActiveProject(updated);
         // Sync local projects list
         setProjects(projects.map(p => p.id === updated.id ? updated : p));
+        setHistoryRefreshTrigger(prev => prev + 1);
       } else {
         alert('Error al guardar los cambios.');
       }
@@ -956,6 +959,9 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
                     </div>
                   </div>
                 </div>
+
+                {/* HISTORIAL DE CAMBIOS */}
+                <ProjectChangeHistory projectId={activeProject.id} refreshTrigger={historyRefreshTrigger} />
 
                 <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl flex items-start gap-3">
                   <Sparkles className="w-5 h-5 text-indigo-600 fill-indigo-200 shrink-0 mt-0.5" />

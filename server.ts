@@ -2,8 +2,8 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './src/db/index.ts';
-import { projects, scrumIterations, scrumTasks, testCases } from './src/db/schema.ts';
-import { eq, and } from 'drizzle-orm';
+import { projects, scrumIterations, scrumTasks, testCases, projectChanges } from './src/db/schema.ts';
+import { eq, and, desc, gte } from 'drizzle-orm';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
 import { GoogleGenAI, Type } from '@google/genai';
 import * as dotenv from 'dotenv';
@@ -213,6 +213,56 @@ app.put('/api/projects/:id', requireAuth, async (req: AuthRequest, res) => {
     
     updateData.updatedAt = new Date();
 
+    // Track changes
+    const oldProject = projectCheck[0];
+    for (const key of Object.keys(updateData)) {
+      if (key === 'updatedAt' || key === 'id' || key === 'userId' || key === 'createdAt') {
+        continue;
+      }
+      const oldRaw = (oldProject as any)[key];
+      const newRaw = updateData[key];
+      
+      const oldVal = oldRaw !== null && oldRaw !== undefined ? String(oldRaw) : '';
+      const newVal = newRaw !== null && newRaw !== undefined ? String(newRaw) : '';
+
+      if (oldVal !== newVal) {
+        const fifteenSecondsAgo = new Date(Date.now() - 15000);
+        try {
+          const recentChange = await db.select()
+            .from(projectChanges)
+            .where(
+              and(
+                eq(projectChanges.projectId, projectId),
+                eq(projectChanges.fieldName, key),
+                gte(projectChanges.changedAt, fifteenSecondsAgo)
+              )
+            )
+            .orderBy(desc(projectChanges.changedAt))
+            .limit(1);
+
+          if (recentChange.length > 0) {
+            await db.update(projectChanges)
+              .set({
+                newValue: newVal,
+                changedAt: new Date()
+              })
+              .where(eq(projectChanges.id, recentChange[0].id));
+          } else {
+            await db.insert(projectChanges)
+              .values({
+                projectId,
+                fieldName: key,
+                oldValue: oldVal,
+                newValue: newVal,
+                changedAt: new Date()
+              });
+          }
+        } catch (err) {
+          console.error('Error logging project change:', err);
+        }
+      }
+    }
+
     const result = await db.update(projects)
       .set(updateData)
       .where(eq(projects.id, projectId))
@@ -222,6 +272,40 @@ app.put('/api/projects/:id', requireAuth, async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error('Error updating project:', error);
     res.status(500).json({ error: 'Failed to update project', details: error.message });
+  }
+});
+
+// GET PROJECT CHANGE HISTORY (last 5 changes)
+app.get('/api/projects/:id/changes', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.dbUser) {
+      return res.status(401).json({ error: 'User context not found' });
+    }
+    const projectId = parseInt(req.params.id);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Check ownership
+    const projectCheck = await db.select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.userId, req.dbUser.id)));
+
+    if (projectCheck.length === 0) {
+      return res.status(404).json({ error: 'Project not found or unauthorized' });
+    }
+
+    // Fetch last 5 changes
+    const changes = await db.select()
+      .from(projectChanges)
+      .where(eq(projectChanges.projectId, projectId))
+      .orderBy(desc(projectChanges.changedAt))
+      .limit(5);
+
+    res.json(changes);
+  } catch (error: any) {
+    console.error('Error fetching project changes:', error);
+    res.status(500).json({ error: 'Failed to fetch changes', details: error.message });
   }
 });
 

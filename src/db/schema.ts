@@ -110,6 +110,18 @@ export const testCases = pgTable('test_cases', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// 6. Project Changes Table (for tracking edits to project fields)
+export const projectChanges = pgTable('project_changes', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id')
+    .references(() => projects.id, { onDelete: 'cascade' })
+    .notNull(),
+  fieldName: text('field_name').notNull(),
+  oldValue: text('old_value'),
+  newValue: text('new_value'),
+  changedAt: timestamp('changed_at').defaultNow(),
+});
+
 // Relationships
 export const usersRelations = relations(users, ({ many }) => ({
   projects: many(projects),
@@ -123,6 +135,14 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   scrumIterations: many(scrumIterations),
   scrumTasks: many(scrumTasks),
   testCases: many(testCases),
+  projectChanges: many(projectChanges),
+}));
+
+export const projectChangesRelations = relations(projectChanges, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectChanges.projectId],
+    references: [projects.id],
+  }),
 }));
 
 export const scrumIterationsRelations = relations(scrumIterations, ({ one, many }) => ({
