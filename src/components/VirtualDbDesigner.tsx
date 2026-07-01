@@ -242,7 +242,7 @@ export default function VirtualDbDesigner({ initialDesign, onSave }: VirtualDbDe
   // SQL DDL Generator
   const generateSql = (): string => {
     if (tables.length === 0) return '-- No hay tablas definidas en el modelo todavía.';
-    let sql = `-- SCRIPT DE CREACION FISICA - POSTGRESQL\n-- Generado automáticamente por Variables + Innovación Project Hub\n\n`;
+    let sql = `-- SCRIPT DE CREACION FISICA - POSTGRESQL\n-- Generado automáticamente por SEPS Project Hub\n\n`;
     
     // Create Tables
     tables.forEach(table => {

@@ -1,6 +1,6 @@
 {
   "name": "Hub de Proyectos de Ingeniería de Software",
-  "description": "Una plataforma interactiva full-stack para el diseño, planificación (Scrum) y documentación de bases de datos relacionales físicas bajo la rúbrica del proyecto Variables + Innovación.",
+  "description": "Una plataforma interactiva full-stack para el diseño, planificación (Scrum) y documentación de bases de datos relacionales físicas bajo el sistema SEPS - Software Engineering Planning System.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

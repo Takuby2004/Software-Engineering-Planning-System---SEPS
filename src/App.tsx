@@ -609,7 +609,7 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
         <header className="bg-white border-b border-slate-200/80 py-2.5 px-4 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Layers className="w-5 h-5 text-indigo-600" />
-            <span className="font-bold text-sm text-slate-800 tracking-tight">Variables + Innovación</span>
+            <span className="font-bold text-sm text-slate-800 tracking-tight">SEPS - Software Engineering Planning System</span>
           </div>
           <span className="text-[10px] text-slate-400 font-mono">Curso de Ingeniería de Software</span>
         </header>
@@ -663,7 +663,7 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
 
         {/* Footer */}
         <footer className="bg-white border-t border-slate-100 py-3 text-center text-[10px] text-slate-400 font-sans">
-          &copy; 2026 Variables + Innovación. Todos los derechos reservados.
+          &copy; 2026 SEPS - Software Engineering Planning System. Todos los derechos reservados.
         </footer>
       </div>
     );
@@ -682,7 +682,7 @@ Devuelve estrictamente un arreglo JSON válido (sin explicaciones, sin tags de m
           onClick={() => setActiveProject(null)}
         >
           <Layers className="w-4 h-4 text-indigo-600" />
-          <span className="font-bold text-sm text-slate-800">Variables + Innovación</span>
+          <span className="font-bold text-sm text-slate-800">SEPS - Software Engineering Planning System</span>
           <span className="bg-slate-100 border border-slate-200 text-slate-600 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">Project Hub</span>
         </div>
 
