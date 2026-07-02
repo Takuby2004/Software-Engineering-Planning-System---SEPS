@@ -17,7 +17,8 @@ import {
   RotateCcw, 
   FileSignature, 
   Code2, 
-  BookMarked 
+  BookMarked,
+  Search
 } from 'lucide-react';
 import { Project, ScrumIteration, ScrumTask, TestCase, FunctionalRequirement, NonFunctionalRequirement, DbTable } from '../types.ts';
 import MarkdownPreview from './MarkdownPreview.tsx';
@@ -61,6 +62,26 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
   const [authorName, setAuthorName] = useState('Grupo de Ingeniería de Software');
   const [showConfig, setShowConfig] = useState<boolean>(true);
 
+  // Advanced PDF & Print Customizer States
+  const [marginSize, setMarginSize] = useState<'normal' | 'compact' | 'wide'>('normal');
+  const [chapterPageBreaks, setChapterPageBreaks] = useState<boolean>(true);
+  const [includeHeaders, setIncludeHeaders] = useState<boolean>(true);
+  const [watermarkText, setWatermarkText] = useState<string>('SEPS INFORME');
+  const [customFooterText, setCustomFooterText] = useState<string>('Reporte Técnico de Ingeniería de Software');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [generationStep, setGenerationStep] = useState<string>('');
+  const [rfSearchQuery, setRfSearchQuery] = useState<string>('');
+
+  const filteredFunctionalRequirements = functionalRequirements.filter(rf => {
+    const query = rfSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      rf.code.toLowerCase().includes(query) ||
+      rf.desc.toLowerCase().includes(query) ||
+      (rf.priority && rf.priority.toLowerCase().includes(query))
+    );
+  });
+
   // Generate virtual SQL block
   const generateSqlScript = (): string => {
     if (dbDesign.length === 0) return '-- No se han modelado tablas.';
@@ -91,7 +112,29 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
   };
 
   const handlePrint = () => {
-    window.print();
+    setIsGeneratingPdf(true);
+    setGenerationStep('Analizando estructura del documento de Ingeniería de Software...');
+    
+    setTimeout(() => {
+      setGenerationStep('Optimizando saltos de página y prevención de viudas/huérfanas...');
+      
+      setTimeout(() => {
+        setGenerationStep('Configurando márgenes de página y escala de fuente...');
+        
+        setTimeout(() => {
+          setGenerationStep('Renderizando cabeceras dinámicas, pie de página y marcas de agua...');
+          
+          setTimeout(() => {
+            setGenerationStep('Lanzando motor de impresión PDF integrado...');
+            
+            setTimeout(() => {
+              setIsGeneratingPdf(false);
+              window.print();
+            }, 500);
+          }, 500);
+        }, 500);
+      }, 500);
+    }, 500);
   };
 
   const resetSettings = () => {
@@ -106,6 +149,11 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
     setUniversityName('UNIVERSIDAD NACIONAL DE INGENIERÍA');
     setFacultyName('FACULTAD DE INGENIERÍA DE SISTEMAS');
     setAuthorName('Grupo de Ingeniería de Software');
+    setMarginSize('normal');
+    setChapterPageBreaks(true);
+    setIncludeHeaders(true);
+    setWatermarkText('SEPS INFORME');
+    setCustomFooterText('Reporte Técnico de Ingeniería de Software');
   };
 
   // Helper to handle chapter title numbering
@@ -280,7 +328,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             
             {/* Column 1: Templates presets */}
             <div className="space-y-2">
@@ -509,19 +557,254 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
               </div>
             </div>
 
+            {/* Column 5: Advanced PDF & Print Settings */}
+            <div className="space-y-2 bg-white border border-slate-200 p-3 rounded-lg flex flex-col justify-between">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                  <Printer className="w-3.5 h-3.5 text-indigo-500" /> Configuración PDF
+                </label>
+
+                <div className="space-y-2 mt-1.5">
+                  <div>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Márgenes de PDF</span>
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        { id: 'compact', label: '1.5cm' },
+                        { id: 'normal', label: '2.5cm' },
+                        { id: 'wide', label: '3.5cm' }
+                      ].map(margin => (
+                        <button
+                          key={margin.id}
+                          type="button"
+                          onClick={() => setMarginSize(margin.id as any)}
+                          className={`py-1 text-center rounded border text-[9px] font-bold transition-all ${
+                            marginSize === margin.id 
+                              ? 'bg-indigo-600 border-indigo-600 text-white' 
+                              : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {margin.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase block">Marca de agua en fondo</span>
+                    <input
+                      type="text"
+                      value={watermarkText}
+                      onChange={(e) => setWatermarkText(e.target.value)}
+                      className="w-full text-[10px] border border-slate-200 rounded px-2 py-1 font-sans focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder="Ninguna..."
+                    />
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase block">Pie de página repetido</span>
+                    <input
+                      type="text"
+                      value={customFooterText}
+                      onChange={(e) => setCustomFooterText(e.target.value)}
+                      className="w-full text-[10px] border border-slate-200 rounded px-2 py-1 font-sans focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder="Reporte SEPS..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1.5 border-t border-slate-100 mt-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[9px] font-bold text-slate-600 cursor-pointer" htmlFor="toggle-breaks">
+                    Salto por Capítulo
+                  </label>
+                  <input
+                    type="checkbox"
+                    id="toggle-breaks"
+                    checked={chapterPageBreaks}
+                    onChange={(e) => setChapterPageBreaks(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-[9px] font-bold text-slate-600 cursor-pointer" htmlFor="toggle-headers">
+                    Cabecera & Pie Pág.
+                  </label>
+                  <input
+                    type="checkbox"
+                    id="toggle-headers"
+                    checked={includeHeaders}
+                    onChange={(e) => setIncludeHeaders(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* DYNAMIC STYLES AND SPECIAL PRINT/PDF GENERATOR OVERLAYS */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: ${marginSize === 'compact' ? '15mm' : marginSize === 'wide' ? '35mm' : '25mm'};
+          }
+          body {
+            background-color: white !important;
+            color: black !important;
+            font-size: ${fontSize === 'compact' ? '10px' : fontSize === 'large' ? '13px' : '11px'} !important;
+          }
+          .print-hidden {
+            display: none !important;
+          }
+          .break-after-page {
+            page-break-after: always !important;
+            break-after: page !important;
+          }
+          .break-before-page {
+            page-break-before: always !important;
+            break-before: page !important;
+          }
+          .break-inside-avoid {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          
+          /* Running headers and footers repeated on every page */
+          .print-header-repeated {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            display: flex !important;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #cbd5e1;
+            font-family: sans-serif;
+            font-size: 8px;
+            color: #64748b;
+            padding-bottom: 4px;
+            pointer-events: none;
+          }
+          .print-footer-repeated {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            display: flex !important;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #cbd5e1;
+            font-family: sans-serif;
+            font-size: 8px;
+            color: #64748b;
+            padding-top: 4px;
+            pointer-events: none;
+          }
+          
+          /* Watermark repeated in center of each page */
+          .print-watermark-repeated {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 65px;
+            font-weight: 900;
+            color: rgba(148, 163, 184, 0.08) !important;
+            font-family: sans-serif;
+            z-index: -1000;
+            pointer-events: none;
+            white-space: nowrap;
+            display: block !important;
+          }
+
+          /* Adjust padding on printable page to prevent overlapping with headers/footers */
+          .printable-document {
+            padding-top: ${includeHeaders ? '15mm' : '0'} !important;
+            padding-bottom: ${includeHeaders ? '15mm' : '0'} !important;
+            border: none !important;
+            box-shadow: none !important;
+            max-width: 100% !important;
+            width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+          }
+          
+          /* Ensure headings and table headers are clean and tables don't split half-way */
+          h1, h2, h3 {
+            break-after: avoid !important;
+            page-break-after: avoid !important;
+          }
+          tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          pre {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      ` }} />
+
+      {isGeneratingPdf && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex flex-col items-center justify-center text-white font-sans print-hidden">
+          <div className="bg-slate-800 border border-slate-700 p-8 rounded-2xl max-w-md w-full text-center space-y-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse"></div>
+            
+            <div className="relative w-16 h-16 mx-auto">
+              <div className="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-lg font-extrabold tracking-tight">Compilador PDF Avanzado SEPS</h3>
+              <p className="text-xs text-slate-400 font-medium">Generando documento con especificaciones de tesis y diseño de sistemas</p>
+            </div>
+
+            <div className="bg-slate-950/60 rounded-lg p-3 border border-slate-800">
+              <p className="text-xs font-mono text-indigo-300 animate-pulse">{generationStep}</p>
+            </div>
+
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              El cuadro de diálogo de impresión nativa se abrirá de inmediato. Selecciona <strong>"Guardar como PDF"</strong> como destino para generar el informe completo de alta fidelidad.
+            </p>
           </div>
         </div>
       )}
 
       {/* DOCUMENT PREVIEW BLOCK */}
       <div 
-        className={`bg-white border border-slate-200 rounded-xl shadow-lg p-8 sm:p-14 max-w-4xl mx-auto ${getFontClass()} text-slate-900 ${getLineSpacingClass()} print:border-0 print:shadow-none print:p-0`}
+        className={`bg-white border border-slate-200 rounded-xl shadow-lg p-8 sm:p-14 max-w-4xl mx-auto ${getFontClass()} text-slate-900 ${getLineSpacingClass()} print:border-0 print:shadow-none print:p-0 printable-document relative`}
         style={getFontInlineStyle()}
       >
+        {/* Printed dynamic elements (Only displayed on print via display rules) */}
+        {includeHeaders && (
+          <>
+            <div className="hidden print-header-repeated">
+              <span>{universityName} — {facultyName}</span>
+              <span className="font-bold">{project.name}</span>
+            </div>
+            <div className="hidden print-footer-repeated">
+              <span>{customFooterText}</span>
+              <span>Metodología Ágil Scrum - SEPS Project Hub</span>
+            </div>
+          </>
+        )}
+        {watermarkText && (
+          <div className="hidden print-watermark-repeated">
+            {watermarkText}
+          </div>
+        )}
         
         {/* CARATULA (TITLE PAGE) - Hide conditionally */}
         {showCover && (
-          <div className="min-h-[85vh] flex flex-col justify-between text-center border-b-4 border-slate-900 pb-16 pt-10">
+          <div className="min-h-[85vh] flex flex-col justify-between text-center border-b-4 border-slate-900 pb-16 pt-10 print:min-h-0 print:h-[265mm] print:border-b-0 print:pb-0 print:pt-0 break-after-page cover-page-break">
             <div>
               <h4 className="font-sans font-bold text-base tracking-widest text-slate-600 uppercase mb-2">{universityName}</h4>
               <h5 className="font-sans font-semibold text-xs tracking-wider text-slate-500 uppercase">{facultyName}</h5>
@@ -556,7 +839,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         )}
 
         {/* INDEX OF CONTENT */}
-        <div className="space-y-6 page-break-after">
+        <div className={`space-y-6 pb-6 ${chapterPageBreaks ? 'break-after-page' : 'border-b border-slate-200'}`}>
           <h2 className="font-sans font-bold text-lg text-slate-900 uppercase border-b pb-2">Índice de Contenido</h2>
           <div className="font-sans text-xs space-y-3 text-slate-600">
             <div className="flex justify-between border-b border-dotted pb-1">
@@ -619,7 +902,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         </div>
 
         {/* CAPITULO 1 */}
-        <div className="space-y-6 pt-6">
+        <div className={`space-y-6 pt-6 ${chapterPageBreaks ? 'break-before-page' : 'border-t border-slate-200 mt-6 pt-6'}`}>
           <h2 className={`font-sans font-extrabold text-xl text-slate-900 border-b-2 ${colors.border} pb-2 uppercase`}>
             {renderChapterTitle('1', 'Descripción del proyecto')}
           </h2>
@@ -745,7 +1028,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         </div>
 
         {/* CAPITULO 2 */}
-        <div className="space-y-6 pt-6">
+        <div className={`space-y-6 pt-6 ${chapterPageBreaks ? 'break-before-page' : 'border-t border-slate-200 mt-6 pt-6'}`}>
           <h2 className={`font-sans font-extrabold text-xl text-slate-900 border-b-2 ${colors.border} pb-2 uppercase`}>
             {renderChapterTitle('2', 'Marco Teórico y Tecnológico')}
           </h2>
@@ -773,16 +1056,39 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         </div>
 
         {/* CAPITULO 3 */}
-        <div className="space-y-6 pt-6">
+        <div className={`space-y-6 pt-6 ${chapterPageBreaks ? 'break-before-page' : 'border-t border-slate-200 mt-6 pt-6'}`}>
           <h2 className={`font-sans font-extrabold text-xl text-slate-900 border-b-2 ${colors.border} pb-2 uppercase`}>
             {renderChapterTitle('3', 'Análisis de Requerimientos')}
           </h2>
 
           <div className="space-y-6">
             <div>
-              <h3 className={`font-sans font-bold text-sm ${colors.text} mb-2 uppercase tracking-wide`}>
-                {renderSubTitle('3.4', 'Requerimientos Funcionales')}
-              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                <h3 className={`font-sans font-bold text-sm ${colors.text} uppercase tracking-wide`}>
+                  {renderSubTitle('3.4', 'Requerimientos Funcionales')}
+                </h3>
+                {functionalRequirements.length > 0 && (
+                  <div className="relative print-hidden flex items-center w-full sm:w-64">
+                    <Search className="w-3.5 h-3.5 absolute left-2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={rfSearchQuery}
+                      onChange={(e) => setRfSearchQuery(e.target.value)}
+                      placeholder="Buscar por código o descripción..."
+                      className="w-full pl-8 pr-7 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50 hover:bg-slate-100/50 transition-colors"
+                    />
+                    {rfSearchQuery && (
+                      <button 
+                        onClick={() => setRfSearchQuery('')}
+                        className="absolute right-2 text-[10px] text-slate-400 hover:text-slate-600 font-bold"
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className={`border rounded-lg overflow-hidden font-sans text-xs ${
                 template === 'technical' ? 'border-slate-400' : 'border-slate-200'
               }`}>
@@ -797,12 +1103,16 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {functionalRequirements.length === 0 ? (
+                    {filteredFunctionalRequirements.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="p-4 text-center italic text-slate-400">Sin requerimientos declarados.</td>
+                        <td colSpan={3} className="p-4 text-center italic text-slate-400">
+                          {functionalRequirements.length === 0 
+                            ? "Sin requerimientos declarados." 
+                            : "No se encontraron requerimientos que coincidan con la búsqueda."}
+                        </td>
                       </tr>
                     ) : (
-                      functionalRequirements.map(rf => (
+                      filteredFunctionalRequirements.map(rf => (
                         <tr key={rf.code} className="hover:bg-slate-50/50">
                           <td className={`p-2 font-mono font-bold ${colors.text}`}>{rf.code}</td>
                           <td className="p-2 text-slate-700">{rf.desc}</td>
@@ -892,7 +1202,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         </div>
 
         {/* CAPITULO 4 */}
-        <div className="space-y-6 pt-6">
+        <div className={`space-y-6 pt-6 ${chapterPageBreaks ? 'break-before-page' : 'border-t border-slate-200 mt-6 pt-6'}`}>
           <h2 className={`font-sans font-extrabold text-xl text-slate-900 border-b-2 ${colors.border} pb-2 uppercase`}>
             {renderChapterTitle('4', 'Diseño del Sistema')}
           </h2>
@@ -979,7 +1289,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         </div>
 
         {/* CAPITULO 5 */}
-        <div className="space-y-6 pt-6">
+        <div className={`space-y-6 pt-6 ${chapterPageBreaks ? 'break-before-page' : 'border-t border-slate-200 mt-6 pt-6'}`}>
           <h2 className={`font-sans font-extrabold text-xl text-slate-900 border-b-2 ${colors.border} pb-2 uppercase`}>
             {renderChapterTitle('5', 'Implementación y Pruebas')}
           </h2>
@@ -1049,7 +1359,7 @@ export default function ReportExporter({ project, iterations, tasks, testCases }
         </div>
 
         {/* CAPITULO 6 */}
-        <div className="space-y-6 pt-6">
+        <div className={`space-y-6 pt-6 ${chapterPageBreaks ? 'break-before-page' : 'border-t border-slate-200 mt-6 pt-6'}`}>
           <h2 className={`font-sans font-extrabold text-xl text-slate-900 border-b-2 ${colors.border} pb-2 uppercase`}>
             {renderChapterTitle('6', 'Conclusiones y Recomendaciones')}
           </h2>
